@@ -13,11 +13,11 @@ The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
 EXCLUSION OF NON-SOFTWARE ASSETS:
-The permissions granted by this license apply ONLY to the source code of the 
-Software. This license does NOT apply to any Live2D model assets, textures, 
-or motion data included in this repository. Such assets are the property of 
-their respective owners (e.g., Live2D Inc.) and are subject to their own 
-original licenses and terms of use.
+The permissions granted by this license apply ONLY to the source code of the
+Software. This license does NOT apply to any Live2D model assets, textures,
+or motion data included in this repository. Such assets are the property of
+their respective owners (e.g., Live2D Inc.) and are and are governed by the
+terms found in [LICENSE-Live2D.md](./LICENSE-Live2D.md).
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -26,5 +26,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-This project is licensed under the MIT License, except for the Live2D sample models, which are governed by [LICENSE-Live2D.md](LICENSE-Live2D.md).
