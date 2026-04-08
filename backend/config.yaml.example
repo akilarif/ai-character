@@ -1,0 +1,29 @@
+stt:
+  model_path: "${WHISPER_LARGE_V3_TURBO_MODEL_PATH}"
+  channels: 1
+  rate: 16000
+  chunk_size: 1024
+  silence_threshold: 500
+  silence_duration: 1.5
+  min_audio_duration: 0.5
+
+llm:
+  model_path: "${QWEN_3_5_9B_MLX_4BIT_MODEL_PATH}"
+  enable_thinking: false
+  max_tokens: 1024
+  max_chat_history_length: 10
+  max_tool_turns: 5
+
+tts:
+  model_path: "${KOKORO_82M_BF16_MODEL_PATH}"
+  voice: "af_heart"
+  lang_code: "a"
+  sample_rate: 24000
+
+mcp_servers:
+  - id: "searxng"
+    command: "uvx"
+    args:
+      - "mcp-searxng"
+    env:
+      SEARXNG_URL: "http://localhost:8080"

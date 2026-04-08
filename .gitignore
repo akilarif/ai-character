@@ -1,0 +1,5 @@
+.DS_Store
+.venv/
+uv.lock
+backend/__pycache__/
+backend/config.yaml

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Character</title>
+    <style>
+      body {
+        margin: 0;
+        background-color: #1a1a1a;
+        overflow: hidden;
+      }
+      #live2d {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+    </style>
+    <!-- This is to prevent favicon.ico not found error -->
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=" />
+  </head>
+  <body>
+    <div class="controls">
+      <button id="btn-audio-unlock">1. Unlock Audio</button>
+      <div id="audio-status" style="color: red">Audio Status: Locked</div>
+      <button id="btn-mic" style="display: none; background-color: #aa392a">
+        Mic: OFF
+      </button>
+      <div id="ai-status">Connecting to Brain...</div>
+      <div id="ai-state" style="color: rgb(16, 123, 223)">Idle</div>
+    </div>
+    <canvas id="live2d"></canvas>
+    <!-- Legacy Cubism 2 Runtime (Required by untitled-pixi-live2d-engine) -->
+    <script src="lib/live2d.min.js"></script>
+    <!-- Live2D Web SDK -->
+    <script src="lib/live2dcubismcore.min.js"></script>
+    <!-- PIXI Engine -->
+    <script src="lib/pixi.min.js"></script>
+    <!-- PIXI Sound Plugin (To play audio, for lip sync) -->
+    <script src="lib/pixi-sound.js"></script>
+    <!-- For Compatibility -->
+    <script>
+      // PixiJS v8 moved settings. This maps them back so the plugin doesn't crash.
+      window.PIXI.Assets = window.PIXI.Assets || {};
+      window.PIXI.settings = window.PIXI.settings || {};
+      window.PIXI.sound = window.PIXI.sound || {};
+      window.PIXI.Sound = window.PIXI.sound || {};
+      window.PIXI.utils = window.PIXI.utils || {};
+
+      if (PIXI.Assets && !PIXI.Assets.from) {
+        // Some plugins look for PIXI.Assets.from, but v8 uses PIXI.Assets.load or similar
+        // We 'shim' it so model.speak can find the files
+        PIXI.Assets.from = PIXI.Assets.load;
+      }
+      if (PIXI.sound && !PIXI.sound.from) {
+        // Alias the internal loader to the expected 'from' method
+        PIXI.sound.from = PIXI.sound.add;
+      }
+    </script>
+    <!-- Live2D PIXI Plugin 'untitled-pixi-live2d-engine' (https://github.com/Untitled-Story/untitled-pixi-live2d-engine)
+    source: https://cdn.jsdelivr.net/npm/untitled-pixi-live2d-engine/dist/index.min.js -->
+    <script src="lib/untitled-pixi-live2d-engine_index.min.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
