@@ -1,4 +1,7 @@
-var MODEL_PATH = "models/Haru/Haru.model3.json";
+var MODEL_DIR = "models/Haru";
+var MODEL_PATH = `${MODEL_DIR}/Haru.model3.json`;
+
+var SHOULD_PLAY_MOTION_SOUNDS = false;
 
 var HOST = "localhost";
 var PORT = 8100;
@@ -47,6 +50,12 @@ async function init() {
       autoFocus: true,
       autoUpdate: true,
     });
+
+    setupMotionSounds();
+    if (SHOULD_PLAY_MOTION_SOUNDS) {
+      playMotionSound();
+    }
+
     app.stage.addChild(model);
 
     // Position & Scale
@@ -61,6 +70,47 @@ async function init() {
   }
 
   setupWebSocket();
+}
+
+// Strips crashing audio metadata and pre-loads sounds into PIXI.sound
+function setupMotionSounds() {
+  const motions = model.internalModel.settings.motions;
+  if (!motions) return;
+
+  console.log("Setting up model audio...");
+  // Pre-register sounds to prevent the pixi-sound errors "Assertion failed: Sound with alias url already exists., ..."
+  for (const group in motions) {
+    motions[group].forEach((motionData) => {
+      if (motionData.Sound) {
+        // Store the path in a new custom variable so it doesn't crash the loader
+        motionData.customSoundPath = MODEL_DIR + "/" + motionData.Sound;
+        // Pre-load it into PIXI.sound using the path as the alias
+        if (!PIXI.sound.exists(motionData.customSoundPath)) {
+          PIXI.sound.add(
+            motionData.customSoundPath,
+            motionData.customSoundPath,
+          );
+        }
+        // Delete the original Sound key to prevent the "url already exists" crash
+        delete motionData.Sound;
+      }
+    });
+  }
+}
+
+function playMotionSound() {
+  // Manually set the motion manager's task to play the sound
+  model.internalModel.motionManager.on("motionStart", (group, index) => {
+    const motionData = model.internalModel.settings.motions[group][index];
+    if (motionData && motionData.customSoundPath) {
+      console.log("Playing audio:", motionData.customSoundPath);
+      // Use a slight timeout or resume to ensure the audio context is active
+      PIXI.sound.play(motionData.customSoundPath, {
+        singleInstance: false, // Allows overlapping sounds if needed
+        volume: 1.0,
+      });
+    }
+  });
 }
 
 function setupWebSocket() {
@@ -102,25 +152,42 @@ function setupWebSocket() {
 }
 
 function handleJsonDataState(data) {
+  if (!model) return;
+
   switch (data.state) {
     case "LISTENING":
       isAiBusy = false;
       divAiState.innerText = "Listening";
+      // Neutral alert face
+      model.expression("F01");
+      // Standard breathing idle
+      // model.motion(group, id, priority)
+      // priority- 0 (lowest) to 3 (highest)
+      model.motion("Idle", 0, 3);
       break;
     case "THINKING":
       isAiBusy = true;
       divAiState.innerText = "Thinking";
+      // Smiling with eyes closed
+      model.expression("F05");
+      // Secondary idle (m15) which usually has a head tilt
+      model.motion("Idle", 1, 0);
       break;
     case "SPEAKING":
       isAiBusy = true;
       divAiState.innerText = "Speaking";
       console.log("User Text:", data.userText);
       console.log("LLM Response:", data.llmResponse);
+      // Neutral alert face
+      model.expression("F01");
       break;
     case "IDLE":
       if (!isTtsAudioPlaying && ttsAudioQueue.length === 0) {
         isAiBusy = false;
         divAiState.innerText = "Idle";
+        // Reset to default neutral face
+        model.expression("F01");
+        model.motion("Idle", 0, 1);
       }
       break;
     default:
