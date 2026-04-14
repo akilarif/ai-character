@@ -155,5 +155,24 @@ en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/dow
 
 [dependency-groups]
 dev = [
+    "mypy>=1.18.2",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
     "ruff>=0.15.9",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["backend/main.py", "backend/session.py", "backend/protocol.py"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+module = ["pipeline"]
+ignore_errors = true

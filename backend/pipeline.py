@@ -1,3 +1,10 @@
+"""MLX-based speech, language, and TTS pipeline with optional MCP tools.
+
+Loads models and configuration from YAML, runs Whisper STT, MLX LM generation
+(with an MCP tool-calling loop when configured), and MLX audio TTS. Used by
+the websocket session to produce assistant replies and WAV audio bytes.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,8 +26,12 @@ from mcp.client.stdio import stdio_client
 from mlx_audio.tts.utils import load_model
 from mlx_lm import generate, load, stream_generate
 
+from protocol import OrchestrateResult, PipelineResultKey
+
 
 class Pipeline:
+    """Configured STT/LLM/TTS stack and MCP tool integration for one process."""
+
     DEFAULT_STT_NUM_CHANNELS: Final = 1
     DEFAULT_STT_SAMPLE_RATE: Final = 16000
     DEFAULT_STT_CHUNK_SIZE: Final = 1024
@@ -50,6 +61,7 @@ class Pipeline:
     system_prompt: str
 
     def __init__(self, config_path="config.yaml"):
+        """Load YAML (with ``${VAR}`` expansion) and initialize heavy models."""
         with open(config_path, "r") as f:
             # Use expandvars to swap the ${} in yaml with actual values
             self.config = yaml.safe_load(os.path.expandvars(f.read()))
@@ -80,15 +92,20 @@ class Pipeline:
         self.system_prompt = ""
 
     def is_silent(self, samples: np.ndarray):
+        """Return True when RMS level is below ``stt.silence_threshold``."""
         rms_volume = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
         silence_threshold = self.stt_config.get(
             "silence_threshold", self.DEFAULT_STT_SILENCE_THRESHOLD
         )
         return rms_volume < silence_threshold
 
-    def compute_chunk_duration(self, chunk: bytes, dtype=np.int16):
-        bytes_per_sample = np.dtype(dtype).itemsize
+    def compute_chunk_duration(self, chunk: bytes | np.ndarray, dtype=np.int16):
+        """Duration in seconds for mono PCM (``bytes`` or int16 ``ndarray``)."""
         rate = self.stt_config.get("rate", Pipeline.DEFAULT_STT_SAMPLE_RATE)
+        if isinstance(chunk, np.ndarray):
+            return len(chunk) / rate
+
+        bytes_per_sample = np.dtype(dtype).itemsize
         return len(chunk) / (rate * bytes_per_sample)
 
     def is_user_speech_finalized(
@@ -130,7 +147,8 @@ class Pipeline:
 
     async def orchestrate(
         self, input_audio_bytes: bytearray, chat_history: list[dict]
-    ) -> dict:
+    ) -> OrchestrateResult | None:
+        """Full turn: transcribe, respond, synthesize; ``None`` if STT is empty."""
         print("Starting to transcribe...")
         user_text = await asyncio.to_thread(self.run_stt, input_audio_bytes)
         if not user_text:
@@ -143,15 +161,16 @@ class Pipeline:
         tts_audio_bytes = await asyncio.to_thread(self.run_tts, llm_response_text)
         print("Finished generating TTS")
         return {
-            "user_text": user_text,
-            "llm_response_text": llm_response_text,
-            "updated_history": updated_history,
-            "tts_audio_bytes": tts_audio_bytes,
+            PipelineResultKey.USER_TEXT: user_text,
+            PipelineResultKey.LLM_RESPONSE_TEXT: llm_response_text,
+            PipelineResultKey.UPDATED_HISTORY: updated_history,
+            PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
         }
 
     async def orchestrate_streaming(
         self, input_audio_bytes: bytearray, chat_history: list[dict]
     ):
+        """Like :meth:`orchestrate` but yields TTS per detected sentence while streaming."""
         print("Starting to transcribe...")
         user_text = await asyncio.to_thread(self.run_stt, input_audio_bytes)
         if not user_text:
@@ -180,10 +199,10 @@ class Pipeline:
                     self.run_tts, current_llm_response_text
                 )
                 yield {
-                    "user_text": user_text,
-                    "llm_response_text": current_llm_response_text,
-                    "updated_history": chat_history,
-                    "tts_audio_bytes": tts_audio_bytes,
+                    PipelineResultKey.USER_TEXT: user_text,
+                    PipelineResultKey.LLM_RESPONSE_TEXT: current_llm_response_text,
+                    PipelineResultKey.UPDATED_HISTORY: chat_history,
+                    PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
                 }
                 sentence_buffer = ""
 
@@ -192,13 +211,14 @@ class Pipeline:
             current_text = sentence_buffer.strip()
             tts_audio_bytes = await asyncio.to_thread(self.run_tts, current_text)
             yield {
-                "user_text": user_text,
-                "llm_response_text": current_text,
-                "updated_history": chat_history,
-                "tts_audio_bytes": tts_audio_bytes,
+                PipelineResultKey.USER_TEXT: user_text,
+                PipelineResultKey.LLM_RESPONSE_TEXT: current_text,
+                PipelineResultKey.UPDATED_HISTORY: chat_history,
+                PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
             }
 
     def run_stt(self, byte_data: bytearray) -> str:
+        """Blocking Whisper transcription of int16 PCM in ``byte_data``."""
         if not byte_data:
             return ""
         audio_np = np.frombuffer(byte_data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -210,6 +230,7 @@ class Pipeline:
     async def run_llm(
         self, user_text: str, chat_history: list[dict]
     ) -> tuple[str, list[dict]]:
+        """Generate assistant text; loop on MCP ``TOOL_CALL`` when configured."""
         enable_thinking = self.llm_config.get(
             "enable_thinking", self.DEFAULT_LLM_ENABLE_THINKING
         )
@@ -239,7 +260,9 @@ class Pipeline:
                 enable_thinking,
                 max_tokens,
             )
-            return self._strip_thinking(raw_response).strip()
+            response = self._strip_thinking(raw_response).strip()
+            chat_history.append({"role": "assistant", "content": response})
+            return response, chat_history
 
         for _ in range(max_tool_turns):
             raw_response = await asyncio.to_thread(
@@ -289,6 +312,7 @@ class Pipeline:
         return response_without_thought.strip(), chat_history
 
     async def run_llm_streaming(self, user_text: str, chat_history: list[dict]):
+        """Stream MLX tokens from a thread; supports MCP tool rounds like :meth:`run_llm`."""
         enable_thinking = self.llm_config.get(
             "enable_thinking", self.DEFAULT_LLM_ENABLE_THINKING
         )
@@ -407,6 +431,7 @@ class Pipeline:
         print("Stopped after max tool turns; last model output was:", file=sys.stderr)
 
     def run_tts(self, text: str) -> bytes:
+        """Synthesize ``text`` to WAV bytes using the loaded MLX TTS model."""
         all_audio = []
         for result in self.tts_model.generate(
             text,
@@ -425,6 +450,7 @@ class Pipeline:
         return wav_buffer.getvalue()
 
     async def initialize_mcp(self):
+        """Connect MCP servers from config and build tool registry + system prompt."""
         if not self.mcp_servers_config:
             self.system_prompt = self._build_system_prompt(
                 "(No MCP servers configured.)"
@@ -439,11 +465,12 @@ class Pipeline:
         self.system_prompt = self._build_system_prompt(tool_catalog)
 
     async def close_mcp(self):
-        """Proper cleanup of child processes"""
+        """Release MCP stdio transports and child processes."""
         await self.mcp_stack.aclose()
 
     @staticmethod
     def _build_system_prompt(tool_catalog: str) -> str:
+        """System prompt including tool list and TOOL_CALL instructions."""
         return f"""You are a helpful assistant.
 
     Answer from your own knowledge when that is enough. Use tools when the user needs live or external information.
@@ -466,6 +493,7 @@ class Pipeline:
 
     @staticmethod
     def _strip_thinking(text: str) -> str:
+        """If ``</think>`` appears, return only the text after that marker."""
         if "</think>" in text:
             print("Thought: ", text.split("</think>", 1)[0])
             print("-" * 50)
@@ -474,6 +502,7 @@ class Pipeline:
 
     @staticmethod
     def _find_balanced_json_object(s: str) -> int | None:
+        """Index after the first top-level balanced ``{...}`` in ``s``, or ``None``."""
         if not s.startswith("{"):
             return None
         depth = 0
@@ -516,6 +545,7 @@ class Pipeline:
 
     @staticmethod
     def _tool_result_text(result: types.CallToolResult) -> str:
+        """Flatten MCP tool result content into a single string for the chat."""
         parts: list[str] = []
         for block in result.content:
             if isinstance(block, types.TextContent):
@@ -563,6 +593,7 @@ class Pipeline:
         stack: AsyncExitStack,
         configs: list[dict],
     ) -> list[tuple[str, ClientSession]]:
+        """Start one MCP ``ClientSession`` per config entry under ``stack``."""
         output: list[tuple[str, ClientSession]] = []
         for config in configs:
             studio_server_params = StdioServerParameters(
@@ -587,6 +618,7 @@ class Pipeline:
         enable_thinking: bool,
         max_tokens: Optional[int],
     ) -> str:
+        """Single-shot MLX LM generation (blocking; run via ``asyncio.to_thread``)."""
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
@@ -605,6 +637,7 @@ class Pipeline:
         enable_thinking: bool,
         max_tokens: Optional[int],
     ):
+        """Stream MLX LM tokens (blocking iterator; consumed from a worker thread)."""
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,

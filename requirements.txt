@@ -1,3 +1,5 @@
+# Generated from pyproject.toml (source of truth).
+# Refresh with: ./scripts/sync_requirements.sh
 addict==2.4.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
