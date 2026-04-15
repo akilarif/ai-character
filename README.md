@@ -27,6 +27,7 @@ Real-time voice AI assistant that runs on local models, with a Live2D frontend a
 2. Create backend config:
    - `cp backend/config.yaml.example backend/config.yaml`
 3. Set the STT, LLM, and TTS model paths referenced by `backend/config.yaml`.
+   - Developed and tested with **Whisper Large v3 Turbo** (STT), **Qwen 2.5 7B MLX 4-bit** (LLM), and **Kokoro 82M BF16** (TTS).
 4. Optional: configure any MCP servers you want to use. The example config includes SearXNG for web search.
 
 This project is designed around local STT, LLM, and TTS models, with the backend using MLX for a macOS-friendly runtime.
