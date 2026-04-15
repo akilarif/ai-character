@@ -2,7 +2,7 @@
 
 Loads models and configuration from YAML, runs Whisper STT, MLX LM generation
 (with an MCP tool-calling loop when configured), and MLX audio TTS. Used by
-the websocket session to produce assistant replies and WAV audio bytes.
+the websocket session to produce LLM-generated replies and WAV audio bytes.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mlx_audio.tts.utils import load_model
 from mlx_lm import generate, load, stream_generate
-
 from protocol import OrchestrateResult, PipelineResultKey
 
 
@@ -145,15 +144,18 @@ class Pipeline:
             return True
         return False
 
-    async def orchestrate(
-        self, input_audio_bytes: bytearray, chat_history: list[dict]
-    ) -> OrchestrateResult | None:
-        """Full turn: transcribe, respond, synthesize; ``None`` if STT is empty."""
+    async def transcribe_audio(self, input_audio_bytes: bytearray) -> str:
+        """Transcribe PCM bytes to text asynchronously."""
         print("Starting to transcribe...")
         user_text = await asyncio.to_thread(self.run_stt, input_audio_bytes)
-        if not user_text:
-            return None
-        print("Finished transcribing. Transcription = ", user_text)
+        if user_text:
+            print("Finished transcribing. Transcription = ", user_text)
+        return user_text
+
+    async def orchestrate_from_user_text(
+        self, user_text: str, chat_history: list[dict]
+    ) -> OrchestrateResult:
+        """Run LLM + TTS once for an already-transcribed user turn."""
         print("Calling LLM...")
         llm_response_text, updated_history = await self.run_llm(user_text, chat_history)
         print("Got LLM response: ", llm_response_text)
@@ -167,16 +169,10 @@ class Pipeline:
             PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
         }
 
-    async def orchestrate_streaming(
-        self, input_audio_bytes: bytearray, chat_history: list[dict]
+    async def orchestrate_streaming_from_user_text(
+        self, user_text: str, chat_history: list[dict]
     ):
-        """Like :meth:`orchestrate` but yields TTS per detected sentence while streaming."""
-        print("Starting to transcribe...")
-        user_text = await asyncio.to_thread(self.run_stt, input_audio_bytes)
-        if not user_text:
-            return
-        print("Finished transcribing. Transcription = ", user_text)
-
+        """Stream LLM response/TTS for an already-transcribed user turn."""
         print("Calling LLM Streaming...")
         sentence_buffer = ""
         async for token in self.run_llm_streaming(user_text, chat_history):
@@ -217,6 +213,27 @@ class Pipeline:
                 PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
             }
 
+    async def orchestrate(
+        self, input_audio_bytes: bytearray, chat_history: list[dict]
+    ) -> OrchestrateResult | None:
+        """Full turn: transcribe, respond, synthesize; ``None`` if STT is empty."""
+        user_text = await self.transcribe_audio(input_audio_bytes)
+        if not user_text:
+            return None
+        return await self.orchestrate_from_user_text(user_text, chat_history)
+
+    async def orchestrate_streaming(
+        self, input_audio_bytes: bytearray, chat_history: list[dict]
+    ):
+        """Like :meth:`orchestrate` but yields TTS per detected sentence while streaming."""
+        user_text = await self.transcribe_audio(input_audio_bytes)
+        if not user_text:
+            return
+        async for pipeline_result in self.orchestrate_streaming_from_user_text(
+            user_text, chat_history
+        ):
+            yield pipeline_result
+
     def run_stt(self, byte_data: bytearray) -> str:
         """Blocking Whisper transcription of int16 PCM in ``byte_data``."""
         if not byte_data:
@@ -230,7 +247,7 @@ class Pipeline:
     async def run_llm(
         self, user_text: str, chat_history: list[dict]
     ) -> tuple[str, list[dict]]:
-        """Generate assistant text; loop on MCP ``TOOL_CALL`` when configured."""
+        """Generate LLM response; loop on MCP ``TOOL_CALL`` when configured."""
         enable_thinking = self.llm_config.get(
             "enable_thinking", self.DEFAULT_LLM_ENABLE_THINKING
         )
@@ -516,9 +533,9 @@ class Pipeline:
         return None
 
     @staticmethod
-    def _extract_tool_call(assistant_text: str) -> dict[str, Any] | None:
+    def _extract_tool_call(llm_response: str) -> dict[str, Any] | None:
         """Parse TOOL_CALL: {{...}} JSON with optional multiline object."""
-        text = Pipeline._strip_thinking(assistant_text.strip())
+        text = Pipeline._strip_thinking(llm_response.strip())
         marker = "TOOL_CALL:"
         idx = text.find(marker)
         if idx == -1:

@@ -9,19 +9,18 @@ from typing import Mapping, cast
 
 import numpy as np
 from fastapi import WebSocket
-
 from pipeline import Pipeline
 from protocol import (
+    LLM_RESPONSE_TEXT_KEY,
+    TTS_AUDIO_BYTES_KEY,
+    UPDATED_HISTORY_KEY,
     ClientControl,
     ClientEventField,
     ConversationState,
-    LLM_RESPONSE_TEXT_KEY,
     OrchestrateResult,
-    TTS_AUDIO_BYTES_KEY,
-    UPDATED_HISTORY_KEY,
-    USER_TEXT_KEY,
     conversation_state_payload,
     speaking_turn_payload,
+    thinking_turn_payload,
 )
 
 
@@ -70,41 +69,47 @@ class WebSocketSession:
         if not self.pipeline.is_user_speech_finalized(self.audio_buffer):
             return
 
-        self.current_state = ConversationState.THINKING
-        await websocket.send_json(
-            conversation_state_payload(ConversationState.THINKING)
-        )
         full_audio_bytes = np.concatenate(self.audio_buffer).astype(np.int16).tobytes()
-
-        if self.stream_llm_responses:
-            self.audio_buffer.clear()
-            await self._stream_pipeline(websocket, bytearray(full_audio_bytes))
+        self.audio_buffer.clear()
+        user_text = await self.pipeline.transcribe_audio(bytearray(full_audio_bytes))
+        if not user_text:
+            self.current_state = ConversationState.IDLE
+            await websocket.send_json(
+                conversation_state_payload(ConversationState.IDLE)
+            )
             return
 
-        await self._run_pipeline_once(websocket, bytearray(full_audio_bytes))
+        self.current_state = ConversationState.THINKING
+        await websocket.send_json(
+            thinking_turn_payload(
+                state=ConversationState.THINKING,
+                user_text=user_text,
+            )
+        )
 
-    async def _stream_pipeline(
-        self, websocket: WebSocket, full_audio_bytes: bytearray
-    ) -> None:
+        if self.stream_llm_responses:
+            await self._stream_pipeline(websocket, user_text)
+            return
+
+        await self._run_pipeline_once(websocket, user_text)
+
+    async def _stream_pipeline(self, websocket: WebSocket, user_text: str) -> None:
         """Stream LLM/TTS fragments after a finalized utterance (sentence-chunked)."""
-        async for pipeline_result in self.pipeline.orchestrate_streaming(
-            full_audio_bytes, self.chat_history
+        async for pipeline_result in self.pipeline.orchestrate_streaming_from_user_text(
+            user_text, self.chat_history
         ):
             if not pipeline_result:
                 continue
             await self._send_speaking_update(websocket, pipeline_result)
 
-    async def _run_pipeline_once(
-        self, websocket: WebSocket, full_audio_bytes: bytearray
-    ) -> None:
+    async def _run_pipeline_once(self, websocket: WebSocket, user_text: str) -> None:
         """Run full STT → LLM → TTS once for a finalized utterance."""
-        pipeline_result = await self.pipeline.orchestrate(
-            full_audio_bytes, self.chat_history
+        pipeline_result = await self.pipeline.orchestrate_from_user_text(
+            user_text, self.chat_history
         )
         if not pipeline_result:
             return
 
-        self.audio_buffer.clear()
         await self._send_speaking_update(websocket, pipeline_result)
 
     async def _send_speaking_update(
@@ -112,7 +117,6 @@ class WebSocketSession:
     ) -> None:
         """Notify the UI and send one WAV TTS chunk for a pipeline slice."""
         self.chat_history = pipeline_result[UPDATED_HISTORY_KEY]
-        user_text = pipeline_result[USER_TEXT_KEY]
         llm_response = pipeline_result[LLM_RESPONSE_TEXT_KEY]
         tts_audio_bytes = pipeline_result[TTS_AUDIO_BYTES_KEY]
 
@@ -120,7 +124,6 @@ class WebSocketSession:
         await websocket.send_json(
             speaking_turn_payload(
                 state=ConversationState.SPEAKING,
-                user_text=user_text,
                 llm_response=llm_response,
             )
         )

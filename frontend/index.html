@@ -8,15 +8,69 @@
     <!-- This is to prevent favicon.ico not found error -->
     <link rel="icon" href="data:;base64,iVBORw0KGgo=" />
   </head>
-  <body>
-    <div class="controls">
-      <button id="btn-audio-unlock">1. Unlock Audio</button>
-      <div id="audio-status">Audio Status: Locked</div>
-      <button id="btn-mic">Mic: OFF</button>
-      <div id="ai-status">Connecting to Brain...</div>
-      <div id="ai-state">Idle</div>
-    </div>
-    <canvas id="canvas-live2d"></canvas>
+  <body id="app-shell">
+    <main class="app-layout">
+      <section class="stage-panel">
+        <div class="stage-copy">
+          <p class="eyebrow">AI Character</p>
+        </div>
+        <div class="stage-card">
+          <div class="stage-glow stage-glow-one"></div>
+          <div class="stage-glow stage-glow-two"></div>
+          <canvas id="canvas-live2d"></canvas>
+        </div>
+      </section>
+
+      <aside class="control-panel">
+        <section class="status-grid">
+          <article class="status-card">
+            <span class="status-label">AI Character</span>
+            <strong id="ai-state" class="status-value">Ready</strong>
+          </article>
+          <article class="status-card">
+            <span class="status-label">Brain</span>
+            <strong id="ai-status" class="status-value"
+              >Connecting to Brain...</strong
+            >
+          </article>
+          <article class="status-card">
+            <span class="status-label">Audio</span>
+            <strong id="audio-status" class="status-value"
+              >Audio Status: Locked</strong
+            >
+          </article>
+        </section>
+
+        <section class="action-panel">
+          <button
+            id="btn-mic"
+            class="mic-toggle"
+            type="button"
+            aria-pressed="false"
+          >
+            Mic Off
+          </button>
+        </section>
+
+        <section class="transcript-panel">
+          <article class="transcript-card">
+            <div class="transcript-header">
+              <span class="transcript-label">User</span>
+              <span class="transcript-caption">Finalized transcript</span>
+            </div>
+            <p id="user-text" class="transcript-text"></p>
+          </article>
+
+          <article class="transcript-card ai-character-card">
+            <div class="transcript-header">
+              <span class="transcript-label">AI Character</span>
+              <span class="transcript-caption">Streaming response</span>
+            </div>
+            <p id="llm-response" class="transcript-text"></p>
+          </article>
+        </section>
+      </aside>
+    </main>
     <!-- Legacy Cubism 2 Runtime (Required by untitled-pixi-live2d-engine) -->
     <script src="lib/live2d.min.js"></script>
     <!-- Live2D Web SDK -->

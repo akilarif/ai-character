@@ -45,33 +45,32 @@ export const SERVER_CONFIG = Object.freeze({
 });
 
 export const ELEMENT_IDS = Object.freeze({
+  appShell: "app-shell",
   canvasLive2d: "canvas-live2d",
-  btnAudioUnlock: "btn-audio-unlock",
   btnMic: "btn-mic",
   divAudioStatus: "audio-status",
   divAiStatus: "ai-status",
   divAiState: "ai-state",
+  divUserText: "user-text",
+  divLlmResponse: "llm-response",
 });
 
 export const UI_TEXT = Object.freeze({
   BRAIN_ONLINE: "Brain Online",
   BRAIN_OFFLINE: "Brain Offline",
-  AUDIO_UNLOCKED: "Audio Status: Unlocked",
-  AUDIO_LOCKED: "Audio Status: Locked",
-  MIC_ON: "Mic: ON",
-  MIC_OFF: "Mic: OFF",
+  AUDIO_UNLOCKED: "Audio Ready",
+  AUDIO_LOCKED: "Audio will activate on first mic use",
+  AUDIO_UNLOCK_FAILED: "Audio still needs a tap to enable playback",
+  MIC_ON: "Mic On",
+  MIC_OFF: "Mic Off",
   IDLE: "Idle",
   LISTENING: "Listening",
   THINKING: "Thinking",
   SPEAKING: "Speaking",
-});
-
-export const UI_COLORS = Object.freeze({
-  ONLINE: "#00ff00",
-  OFFLINE: "#ff0000",
-  MIC_ON: "#2e7d32",
-  MIC_OFF: "#444",
-  AUDIO_UNLOCKED: "greenyellow",
+  USER_PLACEHOLDER:
+    "Your finalized transcript will appear here after you finish speaking.",
+  LLM_RESPONSE_PLACEHOLDER:
+    "The character response will stream here while playback is in progress.",
 });
 
 export const STATES = Object.freeze({

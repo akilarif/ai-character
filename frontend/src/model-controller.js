@@ -4,9 +4,10 @@ const Live2DModel = window.PIXI.live2d.Live2DModel;
 
 export async function initializeModel(canvasElement) {
   const app = new PIXI.Application();
+  const viewportElement = canvasElement.parentElement ?? window;
   await app.init({
     canvas: canvasElement,
-    resizeTo: window,
+    resizeTo: viewportElement,
     backgroundAlpha: 0,
     antialias: true,
     autoDensity: true,
