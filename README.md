@@ -2,6 +2,10 @@
 
 Real-time voice AI assistant that runs on local models, with a Live2D frontend and FastAPI websocket backend.
 
+## Screenshot
+
+![AI Character frontend web UI](docs/images/frontend-web-ui.png)
+
 ## Project Layout
 
 - [`backend/`](backend/README.md) contains the FastAPI app, websocket session handling, and the MLX-based speech/LLM/TTS pipeline.
