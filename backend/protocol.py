@@ -36,6 +36,7 @@ class ClientEventField(StrEnum):
     STATE = "state"
     USER_TEXT = "userText"
     LLM_RESPONSE = "llmResponse"
+    EMOTION = "emotion"
     TYPE = "type"
 
 
@@ -46,6 +47,9 @@ USER_TEXT_KEY: Final[Literal["user_text"]] = "user_text"
 
 LLM_RESPONSE_TEXT_KEY: Final[Literal["llm_response_text"]] = "llm_response_text"
 """Key for LLM response on :class:`OrchestrateResult`."""
+
+EMOTION_KEY: Final[Literal["emotion"]] = "emotion"
+"""Key for emotion in LLM response on :class:`OrchestrateResult`."""
 
 UPDATED_HISTORY_KEY: Final[Literal["updated_history"]] = "updated_history"
 """Key for the chat message list after the LLM step."""
@@ -59,6 +63,7 @@ class PipelineResultKey:
 
     USER_TEXT = USER_TEXT_KEY
     LLM_RESPONSE_TEXT = LLM_RESPONSE_TEXT_KEY
+    EMOTION = EMOTION_KEY
     UPDATED_HISTORY = UPDATED_HISTORY_KEY
     TTS_AUDIO_BYTES = TTS_AUDIO_BYTES_KEY
 
@@ -68,6 +73,7 @@ class OrchestrateResult(TypedDict):
 
     user_text: str
     llm_response_text: str
+    emotion: str = ""
     updated_history: list[dict]
     tts_audio_bytes: bytes
 
@@ -93,9 +99,11 @@ def speaking_turn_payload(
     *,
     state: ConversationState,
     llm_response: str,
+    emotion: str,
 ) -> dict[str, str]:
     """JSON payload for a speaking turn with one LLM response text fragment."""
     return {
         ClientEventField.STATE: state.value,
         ClientEventField.LLM_RESPONSE: llm_response,
+        ClientEventField.EMOTION: emotion,
     }

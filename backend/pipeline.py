@@ -11,6 +11,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import sys
 from contextlib import AsyncExitStack
 from queue import Queue
@@ -190,28 +191,38 @@ class Pipeline:
                     # for the tool logic later in the function.
                     sentence_buffer = ""
                     continue
-                print(f"Generating TTS for sentence: {current_llm_response_text}")
-                tts_audio_bytes = await asyncio.to_thread(
-                    self.run_tts, current_llm_response_text
-                )
-                yield {
-                    PipelineResultKey.USER_TEXT: user_text,
-                    PipelineResultKey.LLM_RESPONSE_TEXT: current_llm_response_text,
-                    PipelineResultKey.UPDATED_HISTORY: chat_history,
-                    PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
-                }
+                print(f"Current LLM response: {current_llm_response_text}")
+
+                segments = self._parse_emotions(current_llm_response_text)
+                if not segments:
+                    segments = [("neutral", current_llm_response_text)]
+
+                for emotion, llm_response_text_without_emotions in segments:
+                    tts_audio_bytes = await asyncio.to_thread(
+                        self.run_tts, llm_response_text_without_emotions
+                    )
+                    yield {
+                        PipelineResultKey.USER_TEXT: user_text,
+                        PipelineResultKey.LLM_RESPONSE_TEXT: llm_response_text_without_emotions,
+                        PipelineResultKey.EMOTION: emotion,
+                        PipelineResultKey.UPDATED_HISTORY: chat_history,
+                        PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
+                    }
                 sentence_buffer = ""
 
         # Handle any leftover text in the buffer after the LLM finishes
         if sentence_buffer.strip():
             current_text = sentence_buffer.strip()
-            tts_audio_bytes = await asyncio.to_thread(self.run_tts, current_text)
-            yield {
-                PipelineResultKey.USER_TEXT: user_text,
-                PipelineResultKey.LLM_RESPONSE_TEXT: current_text,
-                PipelineResultKey.UPDATED_HISTORY: chat_history,
-                PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
-            }
+            segments = self._parse_emotions(current_text) or [("neutral", current_text)]
+            for emotion, text in segments:
+                tts_audio_bytes = await asyncio.to_thread(self.run_tts, text)
+                yield {
+                    PipelineResultKey.USER_TEXT: user_text,
+                    PipelineResultKey.LLM_RESPONSE_TEXT: text,
+                    PipelineResultKey.EMOTION: emotion,
+                    PipelineResultKey.UPDATED_HISTORY: chat_history,
+                    PipelineResultKey.TTS_AUDIO_BYTES: tts_audio_bytes,
+                }
 
     async def orchestrate(
         self, input_audio_bytes: bytearray, chat_history: list[dict]
@@ -488,9 +499,17 @@ class Pipeline:
     @staticmethod
     def _build_system_prompt(tool_catalog: str) -> str:
         """System prompt including tool list and TOOL_CALL instructions."""
-        return f"""You are a helpful assistant.
+        return f"""You are a helpful and expressive AI persona.
 
     Answer from your own knowledge when that is enough. Use tools when the user needs live or external information.
+
+    ## Emotion Protocol
+    Every time you speak (and do NOT call a tool), you must insert emotion tags [tag] directly into your text to signal expression changes.
+    Use an emotion tag at the start of every sentence.
+
+    Available emotions: [neutral], [happy], [angry], [sad], [smile], [surprised], [blush], [frown].
+
+    Example: "[surprised] Oh! I didn't see you there. [happy] It is so good to meet you!"
 
     ## Available tools
 
@@ -502,6 +521,14 @@ class Pipeline:
     You may call tools multiple times. If results are insufficient, call again with a refined name or arguments, or try another tool.
 
     When you do not need a tool, answer in normal language (do not write TOOL_CALL).
+
+    ## Instructions
+    1. Use tools when the user needs live or external information.
+    2. When calling a tool, do NOT include an emotion tag or any other text.
+    3. When answering from knowledge, ALWAYS start with an emotion tag.
+    4. Use emotion tags only with the available emotions.
+    5. Use additional tags mid-sentence if your emotional state shifts.
+    6. Keep your persona consistent and expressive.
 
     ---
 
@@ -574,6 +601,15 @@ class Pipeline:
                 else "Tool error (no message)."
             )
         return "\n".join(parts)
+
+    @staticmethod
+    def _parse_emotions(text: str) -> list[tuple[str, str]]:
+        # Matches tags like [happy] and captures the text following it
+        pattern = r"\[(\w+)\]\s*([^\[]+)"
+        segments = re.findall(pattern, text)
+        # Returns a list of (emotion, text) tuples
+        # e.g., [("surprised", "Oh! I didn't see you there."), ("happy", "It is so good to meet you!")]
+        return segments
 
     @staticmethod
     async def _build_tool_catalog_and_registry(

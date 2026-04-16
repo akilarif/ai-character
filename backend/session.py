@@ -11,6 +11,7 @@ import numpy as np
 from fastapi import WebSocket
 from pipeline import Pipeline
 from protocol import (
+    EMOTION_KEY,
     LLM_RESPONSE_TEXT_KEY,
     TTS_AUDIO_BYTES_KEY,
     UPDATED_HISTORY_KEY,
@@ -118,6 +119,7 @@ class WebSocketSession:
         """Notify the UI and send one WAV TTS chunk for a pipeline slice."""
         self.chat_history = pipeline_result[UPDATED_HISTORY_KEY]
         llm_response = pipeline_result[LLM_RESPONSE_TEXT_KEY]
+        emotion = pipeline_result[EMOTION_KEY]
         tts_audio_bytes = pipeline_result[TTS_AUDIO_BYTES_KEY]
 
         self.current_state = ConversationState.SPEAKING
@@ -125,6 +127,7 @@ class WebSocketSession:
             speaking_turn_payload(
                 state=ConversationState.SPEAKING,
                 llm_response=llm_response,
+                emotion=emotion,
             )
         )
         await websocket.send_bytes(tts_audio_bytes)

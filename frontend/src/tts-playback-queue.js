@@ -5,11 +5,11 @@ export function createTtsPlaybackQueue({
   onStateChange,
   onQueueDrained,
 }) {
-  const queue = [];
+  const queue = []; // Contains objects of audio buffer and emotion
   let isPlaying = false;
 
-  function enqueue(arrayBuffer) {
-    queue.push(arrayBuffer);
+  function enqueue(arrayBuffer, emotion) {
+    queue.push({ arrayBuffer: arrayBuffer, emotion: emotion });
     void processQueue();
   }
 
@@ -21,9 +21,11 @@ export function createTtsPlaybackQueue({
     if (isPlaying || queue.length === 0) return;
 
     isPlaying = true;
-    onStateChange(STATES.SPEAKING);
+    const item = queue.shift();
+    const currentAudio = item.arrayBuffer;
+    const currentEmotion = item.emotion;
 
-    const currentAudio = queue.shift();
+    onStateChange(STATES.SPEAKING, currentEmotion);
     try {
       await speakAudio(model, currentAudio);
     } catch (error) {
@@ -54,11 +56,14 @@ async function speakAudio(model, arrayBuffer) {
 
   const cleanup = () => {
     if (cleanedUp) return;
-    cleanedUp = true;
+    if (model?.internalModel?.motionManager?.currentAudio) {
+      model.internalModel.motionManager.currentAudio = null;
+    }
     if (PIXI.sound.exists(alias)) {
       PIXI.sound.remove(alias);
     }
     URL.revokeObjectURL(audioUrl);
+    cleanedUp = true;
   };
 
   try {
@@ -67,17 +72,16 @@ async function speakAudio(model, arrayBuffer) {
         url: audioUrl,
         preload: true,
         loaded: (error, sound) => {
-          if (error) {
+          if (error || !sound || sound.duration === 0) {
             console.error("Failed to load TTS sound:", error);
-            cleanup();
             resolve();
             return;
           }
 
           model.internalModel.motionManager.initializeAudio(sound, 1.0);
           sound.play(() => {
-            cleanup();
-            resolve();
+            // Delay resolution by 100ms to let the audio buffer "drain"
+            setTimeout(resolve, 100);
           });
         },
       });

@@ -46,7 +46,7 @@ export function createUiState({
     setMicActive(false);
   }
 
-  function setAiState(model, state) {
+  function setAiState(model, state, emotion = null) {
     switch (state) {
       case STATES.LISTENING:
         divAiState.innerText = UI_TEXT.LISTENING;
@@ -64,7 +64,7 @@ export function createUiState({
     }
     divAiState.dataset.state = state.toLowerCase();
     appShell.dataset.aiState = state.toLowerCase();
-    applyModelState(model, state);
+    applyModelState(model, state, emotion);
   }
 
   function setUserText(text) {

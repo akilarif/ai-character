@@ -37,28 +37,38 @@ export async function initializeModel(canvasElement) {
   return { app, model };
 }
 
-export function applyModelState(model, state) {
+export function applyModelState(model, state, emotion = null) {
   if (!model) {
     return;
   }
 
-  const preset = LIVE2D_PRESENTATION.byConversationState[state];
+  let preset;
+  if (
+    state === "SPEAKING" &&
+    emotion &&
+    LIVE2D_PRESENTATION.byEmotion[emotion]
+  ) {
+    preset = LIVE2D_PRESENTATION.byEmotion[emotion];
+  } else {
+    preset = LIVE2D_PRESENTATION.byConversationState[state];
+  }
   if (!preset) {
     return;
   }
 
-  const expressionId =
-    LIVE2D_PRESENTATION.expressions[preset.expressionKey] ??
-    preset.expressionKey;
-  model.expression(expressionId);
+  const expressionId = LIVE2D_PRESENTATION.expressions[preset.expressionKey];
+  if (expressionId) {
+    model.expression(expressionId);
+  }
 
   if (!preset.motion) {
     return;
   }
   const [motionGroupKey, motionIndex, priority] = preset.motion;
-  const groupName =
-    LIVE2D_PRESENTATION.motionGroup[motionGroupKey] ?? motionGroupKey;
-  model.motion(groupName, motionIndex, priority);
+  const groupName = LIVE2D_PRESENTATION.motionGroup[motionGroupKey];
+  if (groupName) {
+    model.motion(groupName, motionIndex, priority);
+  }
 }
 
 // Strips crashing audio metadata and pre-loads sounds into PIXI.sound

@@ -30,6 +30,7 @@ export async function startApp() {
   const currentTurn = {
     userText: "",
     llmResponse: "",
+    emotion: null,
   };
 
   ui.initializeControls();
@@ -38,13 +39,13 @@ export async function startApp() {
 
   const ttsQueue = createTtsPlaybackQueue({
     model,
-    onStateChange: (state) => {
-      ui.setAiState(model, state);
+    onStateChange: (state, emotion) => {
+      ui.setAiState(model, state, emotion);
       isAiBusy = state !== STATES.IDLE;
     },
     onQueueDrained: () => {
       if (!socketClient.safeSend({ type: MESSAGE_TYPES.AUDIO_DONE })) {
-        ui.setAiState(model, STATES.IDLE);
+        ui.setAiState(model, STATES.IDLE, null);
         isAiBusy = false;
       }
     },
@@ -57,6 +58,8 @@ export async function startApp() {
       if (data.state === STATES.IDLE && ttsQueue.hasPendingAudio()) {
         return;
       }
+
+      currentTurn.emotion = null;
 
       if (data.state === STATES.THINKING) {
         currentTurn.userText = data.userText?.trim?.() || currentTurn.userText;
@@ -82,16 +85,23 @@ export async function startApp() {
           );
           ui.setLlmResponse(currentTurn.llmResponse, { streaming: true });
         }
+        if (typeof data.emotion === "string" && data.emotion.trim()) {
+          currentTurn.emotion = data.emotion.trim();
+        }
       }
 
       if (data.state === STATES.IDLE) {
         ui.setLlmResponse(currentTurn.llmResponse, { streaming: false });
       }
 
-      ui.setAiState(model, data.state);
+      // State updates for speaking is handled in ttsQueue
+      if (data.state !== STATES.SPEAKING) {
+        ui.setAiState(model, data.state, currentTurn.emotion);
+      }
       isAiBusy = data.state !== STATES.LISTENING && data.state !== STATES.IDLE;
     },
-    onAudio: (audioBuffer) => ttsQueue.enqueue(audioBuffer),
+    onAudio: (audioBuffer) =>
+      ttsQueue.enqueue(audioBuffer, currentTurn.emotion),
   });
 
   const audioCapture = createAudioCapture({
