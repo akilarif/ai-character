@@ -198,6 +198,8 @@ class Pipeline:
                     segments = [("neutral", current_llm_response_text)]
 
                 for emotion, llm_response_text_without_emotions in segments:
+                    if not llm_response_text_without_emotions.strip():
+                        continue
                     tts_audio_bytes = await asyncio.to_thread(
                         self.run_tts, llm_response_text_without_emotions
                     )
