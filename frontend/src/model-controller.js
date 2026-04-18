@@ -1,4 +1,4 @@
-import { LIVE2D_PRESENTATION, MODEL_CONFIG } from "./constants.js";
+import { LIVE2D_PRESENTATION, MODEL_CONFIG } from "./model-config.js";
 
 const Live2DModel = window.PIXI.live2d.Live2DModel;
 
