@@ -71,25 +71,8 @@ class Pipeline:
         self.tts_config = self.config.get("tts", {})
         self.mcp_servers_config = self.config.get("mcp_servers", [])
 
-        # Load all personas from the personas directory
-        self.personas = {}
-        personas_dir = os.path.join(os.path.dirname(config_path), "personas")
-
-        if os.path.exists(personas_dir):
-            for filename in os.listdir(personas_dir):
-                if filename.endswith(".yaml"):
-                    path = os.path.join(personas_dir, filename)
-                    with open(path, "r", encoding="utf-8") as f:
-                        try:
-                            data = yaml.safe_load(f)
-                            # The persona key is the filename without extension
-                            persona_id = os.path.splitext(filename)[0]
-                            self.personas[persona_id] = data
-                        except Exception as e:
-                            print(
-                                f"Error loading persona {filename}: {e}",
-                                file=sys.stderr,
-                            )
+        self.personas_dir = os.path.join(os.path.dirname(config_path), "personas")
+        self.personas = self._load_all_personas()
 
         # Prewarm STT with dummy audio of 1 second of silence
         print("Prewarming STT model...")
@@ -612,6 +595,34 @@ class Pipeline:
         # Returns a list of (emotion, text) tuples
         # e.g., [("surprised", "Oh! I didn't see you there."), ("happy", "It is so good to meet you!")]
         return segments
+
+    def _load_all_personas(self) -> dict[str, Any]:
+        """Scan the personas directory and load all valid YAML persona definitions."""
+        loaded = {}
+        if not os.path.exists(self.personas_dir):
+            print(
+                f"Warning: Personas directory not found at {self.personas_dir}",
+                file=sys.stderr,
+            )
+            return loaded
+
+        for filename in os.listdir(self.personas_dir):
+            if filename.endswith((".yaml", ".yml")):
+                path = os.path.join(self.personas_dir, filename)
+                persona_id = os.path.splitext(filename)[0]
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f)
+                        if data and "system_prompt" in data:
+                            loaded[persona_id] = data
+                        else:
+                            print(
+                                f"Skipping malformed persona: {filename} (missing system_prompt)",
+                                file=sys.stderr,
+                            )
+                except Exception as e:
+                    print(f"Error loading persona {filename}: {e}", file=sys.stderr)
+        return loaded
 
     def _discover_emotions(self) -> list[str]:
         """Parse supported emotion keys from the frontend configuration."""
