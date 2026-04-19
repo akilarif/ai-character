@@ -185,14 +185,21 @@ class Pipeline:
             sentence_buffer += token
 
             # Trigger TTS when a sentence is finished
+            clean_buf = sentence_buffer.strip()
             if (
                 any(p in token for p in ["!", "?", "\n"])
-                or ("." in token and not re.search(r"\d\.$", sentence_buffer.strip()))
-            ) and len(sentence_buffer.strip()) > 15:
+                # Split on period followed by whitespace OR at end of buffer,
+                # provided it's not an abbreviation, ellipsis, or (for the non-whitespace case) a decimal.
+                or re.search(
+                    r"(?<!Mr)(?<!Dr)(?<!Ms)(?<!Mrs)(?<!St)(?<!Co)(?<!Inc)(?<!\.)"
+                    r"(?:(?<!\d)\.|\.\s+)$",
+                    sentence_buffer,
+                    re.I,
+                )
+            ) and len(clean_buf) > 15:
                 current_llm_response_text = sentence_buffer.strip()
                 if "TOOL_CALL:" in current_llm_response_text:
-                    # We don't clear the buffer yet, because we need the full JSON
-                    # for the tool logic later in the function.
+                    # Clear the buffer so tool call JSON isn't sent to TTS.
                     sentence_buffer = ""
                     continue
                 print(f"Current LLM response: {current_llm_response_text}")
