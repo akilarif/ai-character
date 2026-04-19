@@ -185,11 +185,10 @@ class Pipeline:
             sentence_buffer += token
 
             # Trigger TTS when a sentence is finished
-            # TODO: Improve this logic. It splits decimals like 3.14
             if (
-                any(p in token for p in [".", "!", "?", "\n"])
-                and len(sentence_buffer.strip()) > 15
-            ):
+                any(p in token for p in ["!", "?", "\n"])
+                or ("." in token and not re.search(r"\d\.$", sentence_buffer.strip()))
+            ) and len(sentence_buffer.strip()) > 15:
                 current_llm_response_text = sentence_buffer.strip()
                 if "TOOL_CALL:" in current_llm_response_text:
                     # We don't clear the buffer yet, because we need the full JSON
