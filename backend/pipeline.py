@@ -59,6 +59,7 @@ class Pipeline:
     mcp_stack: AsyncExitStack
     tool_registry: dict[str, tuple[ClientSession, str]]
     system_prompt: str
+    personas: dict[str, Any]
 
     def __init__(self, config_path="config.yaml"):
         """Load YAML (with ``${VAR}`` expansion) and initialize heavy models."""
@@ -69,6 +70,26 @@ class Pipeline:
         self.llm_config = self.config.get("llm", {})
         self.tts_config = self.config.get("tts", {})
         self.mcp_servers_config = self.config.get("mcp_servers", [])
+
+        # Load all personas from the personas directory
+        self.personas = {}
+        personas_dir = os.path.join(os.path.dirname(config_path), "personas")
+
+        if os.path.exists(personas_dir):
+            for filename in os.listdir(personas_dir):
+                if filename.endswith(".yaml"):
+                    path = os.path.join(personas_dir, filename)
+                    with open(path, "r", encoding="utf-8") as f:
+                        try:
+                            data = yaml.safe_load(f)
+                            # The persona key is the filename without extension
+                            persona_id = os.path.splitext(filename)[0]
+                            self.personas[persona_id] = data
+                        except Exception as e:
+                            print(
+                                f"Error loading persona {filename}: {e}",
+                                file=sys.stderr,
+                            )
 
         # Prewarm STT with dummy audio of 1 second of silence
         print("Prewarming STT model...")
@@ -90,6 +111,7 @@ class Pipeline:
         self.mcp_stack = AsyncExitStack()
         self.tool_registry = {}
         self.system_prompt = ""
+        self.emotions = self._discover_emotions()
 
     def is_silent(self, samples: np.ndarray):
         """Return True when RMS level is below ``stt.silence_threshold``."""
@@ -139,7 +161,7 @@ class Pipeline:
                 silent_time = 0.0  # reset on speech
 
         ## Log for debugging
-        # print(f"mylog: Total Duration: {total_duration:.2f}s, Silent Time: {silent_time:.2f}s, RMS: {rms_volume:.2f}")
+        # print(f"Total Duration: {total_duration:.2f}s, Silent Time: {silent_time:.2f}s, RMS: {rms_volume:.2f}")
 
         if total_duration >= min_audio_duration and silent_time >= silence_duration:
             return True
@@ -215,6 +237,7 @@ class Pipeline:
         # Handle any leftover text in the buffer after the LLM finishes
         if sentence_buffer.strip():
             current_text = sentence_buffer.strip()
+            print(f"Final LLM response: {current_text}")
             segments = self._parse_emotions(current_text) or [("neutral", current_text)]
             for emotion, text in segments:
                 tts_audio_bytes = await asyncio.to_thread(self.run_tts, text)
@@ -498,44 +521,21 @@ class Pipeline:
         """Release MCP stdio transports and child processes."""
         await self.mcp_stack.aclose()
 
-    @staticmethod
-    def _build_system_prompt(tool_catalog: str) -> str:
-        """System prompt including tool list and TOOL_CALL instructions."""
-        return f"""You are a helpful and expressive AI persona.
+    def _build_system_prompt(self, tool_catalog: str) -> str:
+        """Construct the system prompt using the active persona's template."""
+        persona_key = self.config.get("persona", "haru")
+        persona_data = self.personas.get(persona_key) or next(
+            iter(self.personas.values()), None
+        )
 
-    Answer from your own knowledge when that is enough. Use tools when the user needs live or external information.
+        if not persona_data:
+            return "You are a helpful AI assistant."
 
-    ## Emotion Protocol
-    Every time you speak (and do NOT call a tool), you must insert emotion tags [tag] directly into your text to signal expression changes.
-    Use an emotion tag at the start of every sentence.
-
-    Available emotions: [neutral], [happy], [angry], [sad], [smile], [surprised], [blush], [frown].
-
-    Example: "[surprised] Oh! I didn't see you there. [happy] It is so good to meet you!"
-
-    ## Available tools
-
-    Each tool has a unique name. To call a tool, your entire reply must be ONLY this line (no other text):
-    TOOL_CALL: {{"name": "<exact tool name from list below>", "arguments": {{ ... }}}}
-
-    Use the exact JSON object shape; arguments must match the tool's parameters.
-
-    You may call tools multiple times. If results are insufficient, call again with a refined name or arguments, or try another tool.
-
-    When you do not need a tool, answer in normal language (do not write TOOL_CALL).
-
-    ## Instructions
-    1. Use tools when the user needs live or external information.
-    2. When calling a tool, do NOT include an emotion tag or any other text.
-    3. When answering from knowledge, ALWAYS start with an emotion tag.
-    4. Use emotion tags only with the available emotions.
-    5. Use additional tags mid-sentence if your emotional state shifts.
-    6. Keep your persona consistent and expressive.
-
-    ---
-
-    {tool_catalog}
-    """
+        emotions_str = ", ".join(f"[{e}]" for e in self.emotions)
+        template = persona_data.get("system_prompt", "")
+        return template.replace("{{emotions}}", emotions_str).replace(
+            "{{tool_catalog}}", tool_catalog
+        )
 
     @staticmethod
     def _strip_thinking(text: str) -> str:
@@ -612,6 +612,44 @@ class Pipeline:
         # Returns a list of (emotion, text) tuples
         # e.g., [("surprised", "Oh! I didn't see you there."), ("happy", "It is so good to meet you!")]
         return segments
+
+    def _discover_emotions(self) -> list[str]:
+        """Parse supported emotion keys from the frontend configuration."""
+        frontend_config = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "frontend", "src", "model-config.js"
+            )
+        )
+        try:
+            with open(frontend_config, "r", encoding="utf-8") as f:
+                content = f.read()
+                # Find the start of the byEmotion section
+                match = re.search(r"byEmotion:\s*Object\.freeze\(\{", content)
+                if match:
+                    # Look at the content following the section start
+                    block = content[match.end() :]
+                    # Find all keys followed by Object.freeze({
+                    # This specifically picks up top-level keys like "happy: Object.freeze({"
+                    # but ignores nested ones like "motion: Object.freeze([" or simple strings.
+                    emotions = re.findall(r"(\w+):\s*Object\.freeze\(\{", block)
+                    if emotions:
+                        return emotions
+        except Exception as e:
+            print(
+                f"Warning: Could not sync emotions from frontend: {e}", file=sys.stderr
+            )
+
+        # Fallback to defaults if file parsing fails
+        return [
+            "neutral",
+            "happy",
+            "angry",
+            "sad",
+            "smile",
+            "surprised",
+            "blush",
+            "frown",
+        ]
 
     @staticmethod
     async def _build_tool_catalog_and_registry(

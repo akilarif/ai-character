@@ -26,11 +26,13 @@ Real-time voice AI assistant that runs on local models, with a Live2D frontend a
    - `uv sync --dev`
 2. Create backend config:
    - `cp backend/config.yaml.example backend/config.yaml`
-3. Configure frontend character (optional):
+3. Configure AI persona (optional):
+   - Personas are defined in `backend/personas/`. You can create new ones or edit existing character prompts. Set the active one via the `persona` key in `backend/config.yaml`.
+4. Configure frontend character (optional):
    - Edit `frontend/src/model-config.js` to change the Live2D model paths or adjust motion/expression mappings.
-4. Set the STT, LLM, and TTS model paths referenced by `backend/config.yaml`.
+5. Set the STT, LLM, and TTS model paths referenced by `backend/config.yaml`.
    - Developed and tested with **Whisper Large v3 Turbo** (STT), **Qwen 2.5 7B MLX 4-bit** (LLM), and **Kokoro 82M BF16** (TTS).
-5. Optional: configure any MCP servers you want to use. The example config includes SearXNG for web search.
+6. Optional: configure any MCP servers you want to use. The example config includes SearXNG for web search.
 
 This project is designed around local STT, LLM, and TTS models, with the backend using MLX for a macOS-friendly runtime.
 
@@ -56,7 +58,7 @@ The backend serves the frontend assets directly, so one server process is enough
 - The frontend sends PCM chunks to `backend/main.py` over a websocket at `/ws`.
 - `backend/session.py` buffers audio, detects end-of-speech, and hands finalized turns to `backend/pipeline.py`.
 - `backend/pipeline.py` runs speech-to-text, LLM generation, optional MCP tool use, and text-to-speech.
- The server streams conversation state updates, emotion tags (e.g., `[happy]`, `[angry]`) parsed from the LLM response, and WAV audio back to the client. The client maps these tags to specific model expressions/motions while `frontend/src/tts-playback-queue.js` handles audio and lip-sync.
+  The server streams conversation state updates, emotion tags (e.g., `[happy]`, `[angry]`) parsed from the LLM response, and WAV audio back to the client. The client maps these tags to specific model expressions/motions while `frontend/src/tts-playback-queue.js` handles audio and lip-sync.
 
 ## Development Commands
 

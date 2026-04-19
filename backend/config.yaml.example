@@ -1,3 +1,7 @@
+# Select the AI character to use. 
+# This key must match a filename in the backend/personas/ directory (e.g., "haru" maps to haru.yaml).
+persona: "haru"
+
 stt:
   model_path: "${WHISPER_LARGE_V3_TURBO_MODEL_PATH}"
   channels: 1

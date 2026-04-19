@@ -6,7 +6,7 @@ This folder contains the app's first-party JavaScript modules. Together they wir
 
 - `app.js` is the main coordinator. It grabs DOM elements, initializes UI state and the Live2D model, connects the websocket client, starts mic capture, and routes server state/audio into the UI and playback queue.
 - `constants.js` centralizes general application configuration such as server host/port, DOM element IDs, conversation states, UI labels, and audio settings.
-- `model-config.js` contains Live2D model-specific constants, paths, and mappings for conversation states and emotion tags (like `[happy]` or `[angry]`).
+  `model-config.js` contains Live2D model-specific constants, paths, and mappings for conversation states and emotions. The backend reads the available emotions from this file to keep the LLM's system prompt in sync.
 - `ui-state.js` owns DOM updates for connection state, audio unlock status, mic button state, user transcript text, LLM response text, and visual AI-state changes.
 - `audio-capture.js` manages microphone permissions, `AudioContext` setup, the PCM worklet connection, and start/stop behavior for live capture.
 - `socket-client.js` wraps the browser `WebSocket` with reconnect logic plus safe helpers for sending JSON control messages and binary PCM audio.
